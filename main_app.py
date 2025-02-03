@@ -35,6 +35,8 @@ from openpyxl import Workbook
 from openpyxl.styles import PatternFill
 from streamlit.components.v1 import html
 import openai
+from nltk.sentiment import SentimentIntensityAnalyzer
+import nltk
 from openai import OpenAI
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, ID3NoHeaderError
@@ -52,6 +54,8 @@ import threading
 # LiveTranscriptionEvents,
 # LiveOptions,
 # )
+
+nltk.download('vader_lexicon')
 
 groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 # deepgram = DeepgramClient(st.secrets["DEEPGRAM_API_KEY"])
@@ -95,6 +99,75 @@ def make_fetch_request(url, headers, method='GET', data=None):
     else:
         response = requests.get(url, headers=headers)
     return response.json()
+
+def analyze_sentiment(transcript):
+    """
+    Perform sentiment analysis on a transcribed conversation.
+    
+    Args:
+        transcript (str): The transcribed conversation as a string.
+    
+    Returns:
+        dict: Sentiment scores including overall sentiment and per-speaker analysis.
+    """
+    # Initialize the sentiment analyzer
+    sia = SentimentIntensityAnalyzer()
+
+    # Split transcript into lines and analyze each sentence
+    speaker_sentiments = {}
+    for line in transcript.split("\n"):
+        if ": " in line:
+            speaker, text = line.split(": ", 1)  # Split speaker and text
+            sentiment_score = sia.polarity_scores(text)
+
+            if speaker not in speaker_sentiments:
+                speaker_sentiments[speaker] = {
+                    "positive": 0,
+                    "neutral": 0,
+                    "negative": 0,
+                    "compound": 0,
+                    "count": 0
+                }
+
+            speaker_sentiments[speaker]["positive"] += sentiment_score["pos"]
+            speaker_sentiments[speaker]["neutral"] += sentiment_score["neu"]
+            speaker_sentiments[speaker]["negative"] += sentiment_score["neg"]
+            speaker_sentiments[speaker]["compound"] += sentiment_score["compound"]
+            speaker_sentiments[speaker]["count"] += 1
+
+    # Compute average sentiment scores per speaker
+    for speaker, scores in speaker_sentiments.items():
+        for key in ["positive", "neutral", "negative", "compound"]:
+            if scores["count"] > 0:
+                scores[key] /= scores["count"]
+
+            # Assign sentiment classification per speaker
+            compound_score = scores["compound"]
+            if compound_score > 0.05:
+                scores["sentiment"] = "Positive"
+            elif compound_score < -0.05:
+                scores["sentiment"] = "Negative"
+            else:
+                scores["sentiment"] = "Neutral"
+
+        # Calculate overall sentiment score
+    if speaker_sentiments:
+        overall_compound_score = sum(scores["compound"] for scores in speaker_sentiments.values()) / len(speaker_sentiments)
+
+        # Determine overall sentiment classification
+        if overall_compound_score > 0.05:
+            overall_sentiment = "Positive"
+        elif overall_compound_score < -0.05:
+            overall_sentiment = "Negative"
+        else:
+            overall_sentiment = "Neutral"
+    else:
+        overall_sentiment = "Neutral"
+
+    return {
+        "speaker_sentiments": speaker_sentiments,
+        "overall_sentiment": overall_sentiment
+    }
 
 def speech_to_text_groq(audio_file):
     #print into dialog format
@@ -1265,6 +1338,10 @@ def main():
                     with st.spinner("Transcribing & Auditing In Progress..."):
                         if transcribe_option == "OpenAI (Recommended)":   
                             text, language_code = speech_to_text(audio_file)
+                            sentiment_results = analyze_sentiment(text)                       
+                            # Print Sentiment Analysis
+                            print("\nSentiment Analysis Results:")
+                            print(sentiment_results)
                             if audit_option == "OpenAI (Recommended)":
                                 result = LLM_audit(text)
                                 if result["Overall Result"] == "Fail":
@@ -1300,7 +1377,7 @@ def main():
                     with st.expander(audio_file[2:] + f" ({language_code})"):
                     # with st.expander(audio_file[2:]):
                         st.write()
-                        tab1, tab2, tab3 = st.tabs(["Converted Text", "Audit Result", "Download Content"])
+                        tab1, tab2, tab3, tab4 = st.tabs(["Converted Text", "Audit Result", "Sentiment Analysis", "Download Content"])
                 with col2:
                     st.write(f"({current} / {end})")
                     st.markdown(status, unsafe_allow_html=True)
@@ -1364,6 +1441,32 @@ def main():
                         create_log_entry(f"{e}")
                         st.error(f"Error processing data: {e}")
                 with tab3:
+                    st.subheader("Sentiment Analysis Results")
+
+                    # Perform sentiment analysis
+                    sentiment_results = analyze_sentiment(text)
+
+                    # Display each speaker's sentiment
+                    for speaker, scores in sentiment_results["speaker_sentiments"].items():
+                        st.markdown(f"### {speaker}")
+                        st.write(f"**Sentiment:** {scores['sentiment']}")
+                        st.write(f"Positive Score: {scores['positive']:.2f}")
+                        st.write(f"Neutral Score: {scores['neutral']:.2f}")
+                        st.write(f"Negative Score: {scores['negative']:.2f}")
+                        st.write(f"Compound Score: {scores['compound']:.2f}")
+                        st.markdown("---")  # Separator for readability
+
+                    # Display overall sentiment classification
+                    st.markdown(f"## Overall Sentiment: **{sentiment_results['overall_sentiment']}**")
+
+                    # Add color-based sentiment display
+                    if sentiment_results["overall_sentiment"] == "Positive":
+                        st.success("😊 The conversation was **Positive**.")
+                    elif sentiment_results["overall_sentiment"] == "Negative":
+                        st.error("😡 The conversation was **Negative**.")
+                    else:
+                        st.warning("😐 The conversation was **Neutral**.")
+                with tab4:
                     zip_buffer = handle_combined_download(
                         data_text=text,
                         data_json=json_data,
