@@ -1149,7 +1149,7 @@ def main():
         st.write(f"Transcription Model:\n\n{transcribe_option.replace('(Recommended)','')}\n\nAudit Model:\n\n{audit_option.replace('(Recommended)','')}")
         st.markdown('<p style="color:red;">Groq AI Models are not recommended for file sizes of more than 1MB. Model will start to hallucinate.</p>', unsafe_allow_html=True)
 
-    st.title("AI Transcription & Audit Service")
+    st.title("AI Transcription & Audit Service (with Sentiment Analysis)")
     st.info("Upload an audio file or select a folder to convert audio to text.", icon=":material/info:")
 
     audio_files = []
