@@ -55,7 +55,7 @@ import threading
 # LiveOptions,
 # )
 
-nltk.download('vader_lexicon')
+# nltk.download('vader_lexicon')
 
 groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 # deepgram = DeepgramClient(st.secrets["DEEPGRAM_API_KEY"])
@@ -100,74 +100,139 @@ def make_fetch_request(url, headers, method='GET', data=None):
         response = requests.get(url, headers=headers)
     return response.json()
 
-def analyze_sentiment(transcript):
+def analyze_sentiment_chatgpt(transcript):
     """
-    Perform sentiment analysis on a transcribed conversation.
-    
+    Perform sentiment analysis using ChatGPT on a transcribed conversation.
+
     Args:
         transcript (str): The transcribed conversation as a string.
-    
+
     Returns:
-        dict: Sentiment scores including overall sentiment and per-speaker analysis.
+        dict: Sentiment classification for each speaker and overall sentiment.
     """
-    # Initialize the sentiment analyzer
-    sia = SentimentIntensityAnalyzer()
+    client = openai.OpenAI(api_key=st.secrets["API_KEY"])  # Ensure API key is stored in Streamlit secrets
 
-    # Split transcript into lines and analyze each sentence
-    speaker_sentiments = {}
-    for line in transcript.split("\n"):
-        if ": " in line:
-            speaker, text = line.split(": ", 1)  # Split speaker and text
-            sentiment_score = sia.polarity_scores(text)
+    prompt = f"""
+    You are an AI assistant specializing in sentiment analysis.
+    Analyze the following conversation and determine the sentiment of each speaker separately.
+    Classify their sentiment as **Positive, Neutral, or Negative** and provide a reason.
+    Also, provide an **overall sentiment** classification for the conversation.
 
-            if speaker not in speaker_sentiments:
-                speaker_sentiments[speaker] = {
-                    "positive": 0,
-                    "neutral": 0,
-                    "negative": 0,
-                    "compound": 0,
-                    "count": 0
-                }
+    **Input Conversation:**
+    {transcript}
 
-            speaker_sentiments[speaker]["positive"] += sentiment_score["pos"]
-            speaker_sentiments[speaker]["neutral"] += sentiment_score["neu"]
-            speaker_sentiments[speaker]["negative"] += sentiment_score["neg"]
-            speaker_sentiments[speaker]["compound"] += sentiment_score["compound"]
-            speaker_sentiments[speaker]["count"] += 1
+    **Response Format (Valid JSON Object):**
+    {{
+        "speaker_sentiments": {{
+            "Speaker Name": {{
+                "sentiment": "Positive/Neutral/Negative",
+                "reason": "Brief explanation for classification."
+            }},
+            "Speaker Name": {{
+                "sentiment": "Positive/Neutral/Negative",
+                "reason": "Brief explanation for classification."
+            }}
+        }},
+        "overall_sentiment": "Positive/Neutral/Negative",
+        "overall_reason": "Brief summary of why the conversation is classified as this sentiment."
+    }}
+    Ensure your response is **valid JSON** and contains no extra text.
+    """
 
-    # Compute average sentiment scores per speaker
-    for speaker, scores in speaker_sentiments.items():
-        for key in ["positive", "neutral", "negative", "compound"]:
-            if scores["count"] > 0:
-                scores[key] /= scores["count"]
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "You are a helpful AI assistant that specializes in sentiment analysis."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.5,
+        response_format={"type": "json_object"}  # ✅ Fixed: Correct response format
+    )
 
-            # Assign sentiment classification per speaker
-            compound_score = scores["compound"]
-            if compound_score > 0.05:
-                scores["sentiment"] = "Positive"
-            elif compound_score < -0.05:
-                scores["sentiment"] = "Negative"
-            else:
-                scores["sentiment"] = "Neutral"
+    # Extract response and convert to JSON
+    try:
+        result = response.choices[0].message.content
+        sentiment_data = json.loads(result)  # Ensures JSON parsing
+        return sentiment_data
+    except json.JSONDecodeError:
+        print("❌ Error: Response was not valid JSON. Returning default structure.")
+        return {
+            "speaker_sentiments": {},
+            "overall_sentiment": "Neutral",
+            "overall_reason": "Could not determine sentiment."
+        }
+    except Exception as e:
+        print(f"❌ Error processing sentiment analysis: {e}")
+        return {"error": "Failed to process sentiment analysis."}
 
-        # Calculate overall sentiment score
-    if speaker_sentiments:
-        overall_compound_score = sum(scores["compound"] for scores in speaker_sentiments.values()) / len(speaker_sentiments)
+# def analyze_sentiment(transcript):
+#     """
+#     Perform sentiment analysis on a transcribed conversation.
+    
+#     Args:
+#         transcript (str): The transcribed conversation as a string.
+    
+#     Returns:
+#         dict: Sentiment scores including overall sentiment and per-speaker analysis.
+#     """
+#     # Initialize the sentiment analyzer
+#     sia = SentimentIntensityAnalyzer()
 
-        # Determine overall sentiment classification
-        if overall_compound_score > 0.05:
-            overall_sentiment = "Positive"
-        elif overall_compound_score < -0.05:
-            overall_sentiment = "Negative"
-        else:
-            overall_sentiment = "Neutral"
-    else:
-        overall_sentiment = "Neutral"
+#     # Split transcript into lines and analyze each sentence
+#     speaker_sentiments = {}
+#     for line in transcript.split("\n"):
+#         if ": " in line:
+#             speaker, text = line.split(": ", 1)  # Split speaker and text
+#             sentiment_score = sia.polarity_scores(text)
 
-    return {
-        "speaker_sentiments": speaker_sentiments,
-        "overall_sentiment": overall_sentiment
-    }
+#             if speaker not in speaker_sentiments:
+#                 speaker_sentiments[speaker] = {
+#                     "positive": 0,
+#                     "neutral": 0,
+#                     "negative": 0,
+#                     "compound": 0,
+#                     "count": 0
+#                 }
+
+#             speaker_sentiments[speaker]["positive"] += sentiment_score["pos"]
+#             speaker_sentiments[speaker]["neutral"] += sentiment_score["neu"]
+#             speaker_sentiments[speaker]["negative"] += sentiment_score["neg"]
+#             speaker_sentiments[speaker]["compound"] += sentiment_score["compound"]
+#             speaker_sentiments[speaker]["count"] += 1
+
+#     # Compute average sentiment scores per speaker
+#     for speaker, scores in speaker_sentiments.items():
+#         for key in ["positive", "neutral", "negative", "compound"]:
+#             if scores["count"] > 0:
+#                 scores[key] /= scores["count"]
+
+#             # Assign sentiment classification per speaker
+#             compound_score = scores["compound"]
+#             if compound_score > 0.05:
+#                 scores["sentiment"] = "Positive"
+#             elif compound_score < -0.05:
+#                 scores["sentiment"] = "Negative"
+#             else:
+#                 scores["sentiment"] = "Neutral"
+
+#         # Calculate overall sentiment score
+#     if speaker_sentiments:
+#         overall_compound_score = sum(scores["compound"] for scores in speaker_sentiments.values()) / len(speaker_sentiments)
+
+#         # Determine overall sentiment classification
+#         if overall_compound_score > 0.05:
+#             overall_sentiment = "Positive"
+#         elif overall_compound_score < -0.05:
+#             overall_sentiment = "Negative"
+#         else:
+#             overall_sentiment = "Neutral"
+#     else:
+#         overall_sentiment = "Neutral"
+
+#     return {
+#         "speaker_sentiments": speaker_sentiments,
+#         "overall_sentiment": overall_sentiment
+#     }
 
 def speech_to_text_groq(audio_file):
     #print into dialog format
@@ -1338,10 +1403,10 @@ def main():
                     with st.spinner("Transcribing & Auditing In Progress..."):
                         if transcribe_option == "OpenAI (Recommended)":   
                             text, language_code = speech_to_text(audio_file)
-                            sentiment_results = analyze_sentiment(text)                       
-                            # Print Sentiment Analysis
-                            print("\nSentiment Analysis Results:")
-                            print(sentiment_results)
+                            # sentiment_results = analyze_sentiment(text)                       
+                            # # Print Sentiment Analysis
+                            # print("\nSentiment Analysis Results:")
+                            # print(sentiment_results)
                             if audit_option == "OpenAI (Recommended)":
                                 result = LLM_audit(text)
                                 if result["Overall Result"] == "Fail":
@@ -1441,23 +1506,21 @@ def main():
                         create_log_entry(f"{e}")
                         st.error(f"Error processing data: {e}")
                 with tab3:
-                    st.subheader("Sentiment Analysis Results")
+                    st.subheader("Sentiment Analysis Results (Powered by ChatGPT)")
 
-                    # Perform sentiment analysis
-                    sentiment_results = analyze_sentiment(text)
+                    # Perform sentiment analysis using GPT-4
+                    sentiment_results = analyze_sentiment_chatgpt(text)
 
                     # Display each speaker's sentiment
-                    for speaker, scores in sentiment_results["speaker_sentiments"].items():
+                    for speaker, data in sentiment_results["speaker_sentiments"].items():
                         st.markdown(f"### {speaker}")
-                        st.write(f"**Sentiment:** {scores['sentiment']}")
-                        st.write(f"Positive Score: {scores['positive']:.2f}")
-                        st.write(f"Neutral Score: {scores['neutral']:.2f}")
-                        st.write(f"Negative Score: {scores['negative']:.2f}")
-                        st.write(f"Compound Score: {scores['compound']:.2f}")
+                        st.write(f"**Sentiment:** {data['sentiment']}")
+                        st.write(f"**Reason:** {data['reason']}")
                         st.markdown("---")  # Separator for readability
 
                     # Display overall sentiment classification
                     st.markdown(f"## Overall Sentiment: **{sentiment_results['overall_sentiment']}**")
+                    st.write(f"**Overall Reason:** {sentiment_results['overall_reason']}")
 
                     # Add color-based sentiment display
                     if sentiment_results["overall_sentiment"] == "Positive":
