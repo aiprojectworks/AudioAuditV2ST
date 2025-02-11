@@ -115,7 +115,7 @@ def analyze_sentiment_chatgpt(transcript):
     prompt = f"""
     You are an AI assistant specializing in sentiment analysis.
     Analyze the following conversation and determine the sentiment of each speaker separately.
-    Classify their sentiment as **Positive, Neutral, or Negative** and provide a reason.
+    Classify their sentiment as **Positive or Negative** and provide a reason.
     Also, provide an **overall sentiment** classification for the conversation.
 
     **Input Conversation:**
@@ -125,15 +125,15 @@ def analyze_sentiment_chatgpt(transcript):
     {{
         "speaker_sentiments": {{
             "Speaker Name": {{
-                "sentiment": "Positive/Neutral/Negative",
+                "sentiment": "Positive/Negative",
                 "reason": "Brief explanation for classification."
             }},
             "Speaker Name": {{
-                "sentiment": "Positive/Neutral/Negative",
+                "sentiment": "Positive/Negative",
                 "reason": "Brief explanation for classification."
             }}
         }},
-        "overall_sentiment": "Positive/Neutral/Negative",
+        "overall_sentiment": "Positive/Negative",
         "overall_reason": "Brief summary of why the conversation is classified as this sentiment."
     }}
     Ensure your response is **valid JSON** and contains no extra text.
